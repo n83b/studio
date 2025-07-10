@@ -35,14 +35,19 @@ export async function rhythmRandomizer(input: RhythmRandomizerInput): Promise<Rh
 
 const prompt = ai.definePrompt({
   name: 'rhythmRandomizerPrompt',
-  input: {schema: RhythmRandomizerInputSchema},
+  input: {schema: z.object({ pattern: z.string() })},
   output: {schema: RhythmRandomizerOutputSchema},
-  prompt: `You are a rhythm generator. Given the following rhythm pattern, add subtle variations to make it more interesting, without changing the overall feel too much.
+  prompt: `You are a rhythm generator. You will be given a rhythm pattern as a 2D JSON array of booleans.
+Your task is to introduce subtle variations to this pattern to make it more interesting, while preserving the overall feel of the beat.
 
-IMPORTANT: You must only output a valid JSON 2D array of booleans that matches the input structure. Do not add any explanation, comments, or any other text.
+The input pattern represents a 16-step sequence for several drum sounds.
+'true' means a drum hit, 'false' means a rest.
+
+IMPORTANT: Your response MUST be ONLY the modified pattern, formatted as a valid JSON 2D array of booleans.
+Do not add any explanation, comments, code block fences, or any other text. Just the raw JSON.
 
 Pattern:
-{{{jsonStringify pattern}}}`,
+{{{pattern}}}`,
 });
 
 const rhythmRandomizerFlow = ai.defineFlow(
@@ -52,7 +57,7 @@ const rhythmRandomizerFlow = ai.defineFlow(
     outputSchema: RhythmRandomizerOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const {output} = await prompt({ pattern: JSON.stringify(input.pattern) });
     return output!;
   }
 );
