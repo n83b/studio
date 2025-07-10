@@ -33,7 +33,7 @@ export default function DrumMachinePage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [audioBuffers, setAudioBuffers] = useState<(AudioBuffer | null)[]>([]);
   const [isRandomizing, setIsRandomizing] = useState(false);
-  const [isKitLoading, setIsKitLoading] = useState(true);
+  const [isKitLoading, setIsKitLoading] = useState(false);
   const [isAudioContextReady, setIsAudioContextReady] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -216,17 +216,17 @@ export default function DrumMachinePage() {
                 ))}
                 
                 {/* Sequencer Grid */}
-                {isPatternValid(pattern) && DRUM_KIT.sounds.map((sound, soundIndex) => (
+                {DRUM_KIT.sounds.map((sound, soundIndex) => (
                   <React.Fragment key={sound.name}>
                     <div className="font-bold text-sm text-left sticky left-0 z-10 bg-background/95 pr-2 flex items-center">{sound.name}</div>
                     {Array.from({ length: NUM_STEPS }).map((_, stepIndex) => (
                       <div key={stepIndex} className={cn("flex items-center justify-center", stepIndex === currentStep && isPlaying ? "bg-primary/20 rounded-md" : "")}>
                         <button
                           onClick={() => toggleStep(soundIndex, stepIndex)}
-                          aria-pressed={pattern[soundIndex]?.[stepIndex] ?? false}
+                          aria-pressed={pattern?.[soundIndex]?.[stepIndex] ?? false}
                           className={cn(
                             "w-full h-12 md:h-14 rounded-md border-2 border-muted transition-all duration-150 transform hover:scale-105",
-                            pattern[soundIndex]?.[stepIndex] ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
+                            pattern?.[soundIndex]?.[stepIndex] ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
                              (stepIndex + 1) % 4 === 0 ? "border-r-foreground/30" : ""
                           )}
                         />
