@@ -47,7 +47,7 @@ export default function DrumMachinePage() {
     const data = buffer.getChannelData(0);
     for (let i = 0; i < frameCount; i++) {
         // A simple decaying noise to create a click sound
-        data[i] = Math.random() * 2 - 1 * Math.exp(-i / (context.sampleRate * 0.01));
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (context.sampleRate * 0.01));
     }
     return buffer;
   }
@@ -67,7 +67,7 @@ export default function DrumMachinePage() {
         DRUM_KIT.sounds.map(sound =>
           fetch(sound.path)
             .then(response => {
-              if (!response.ok) throw new Error('Sound file not found');
+              if (!response.ok) throw new Error(`Sound file not found: ${sound.path}`);
               return response.arrayBuffer();
             })
             .then(buffer => context.decodeAudioData(buffer))
@@ -130,15 +130,12 @@ export default function DrumMachinePage() {
   }, [isPlaying, tempo, pattern, playSample, isKitLoading]);
 
   const handlePlayPause = async () => {
-    if (isKitLoading) return;
-
     let context = audioContextRef.current;
 
     if (!context) {
       try {
         context = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioContextRef.current = context;
-        await loadAudioKit(context);
       } catch (error) {
         console.error("Failed to create audio context:", error);
         toast({
@@ -208,6 +205,15 @@ export default function DrumMachinePage() {
   const isPatternValid = (p: any): p is boolean[][] => {
     return Array.isArray(p) && p.length === DRUM_KIT.sounds.length && p.every(row => Array.isArray(row) && row.length === NUM_STEPS && row.every(val => typeof val === 'boolean'));
   }
+
+  useEffect(() => {
+    // We only want to create the audio context once the component is mounted in the browser.
+    if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        loadAudioKit(audioContextRef.current);
+    }
+  }, [loadAudioKit]);
+
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
