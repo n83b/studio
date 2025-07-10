@@ -96,7 +96,7 @@ export default function DrumMachinePage() {
         setCurrentStep(prevStep => {
           const nextStep = (prevStep + 1) % NUM_STEPS;
           pattern.forEach((track, soundIndex) => {
-            if (track[nextStep]) {
+            if (track && track[nextStep]) {
               playSample(soundIndex);
             }
           });
@@ -164,6 +164,10 @@ export default function DrumMachinePage() {
       }
   };
 
+  const isPatternValid = (p: boolean[][]): boolean => {
+    return Array.isArray(p) && p.length === DRUM_KIT.sounds.length && p.every(row => Array.isArray(row) && row.length === NUM_STEPS);
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
       <Card className="w-full max-w-7xl shadow-2xl border-2 border-primary/20">
@@ -203,17 +207,17 @@ export default function DrumMachinePage() {
                 ))}
                 
                 {/* Sequencer Grid */}
-                {DRUM_KIT.sounds.map((sound, soundIndex) => (
+                {isPatternValid(pattern) && DRUM_KIT.sounds.map((sound, soundIndex) => (
                   <React.Fragment key={sound.name}>
                     <div className="font-bold text-sm text-left sticky left-0 z-10 bg-background/95 pr-2 flex items-center">{sound.name}</div>
                     {Array.from({ length: NUM_STEPS }).map((_, stepIndex) => (
                       <div key={stepIndex} className={cn("flex items-center justify-center", stepIndex === currentStep && isPlaying ? "bg-primary/20 rounded-md" : "")}>
                         <button
                           onClick={() => toggleStep(soundIndex, stepIndex)}
-                          aria-pressed={pattern[soundIndex][stepIndex]}
+                          aria-pressed={pattern[soundIndex]?.[stepIndex] ?? false}
                           className={cn(
                             "w-full h-12 md:h-14 rounded-md border-2 border-muted transition-all duration-150 transform hover:scale-105",
-                            pattern[soundIndex][stepIndex] ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
+                            pattern[soundIndex]?.[stepIndex] ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
                              (stepIndex + 1) % 4 === 0 ? "border-r-foreground/30" : ""
                           )}
                         />
