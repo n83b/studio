@@ -34,7 +34,8 @@ export default function DrumMachinePage() {
   const [currentStep, setCurrentStep] = useState(-1);
   const [audioBuffers, setAudioBuffers] = useState<(AudioBuffer | null)[]>([]);
   const [isRandomizing, setIsRandomizing] = useState(false);
-  const [isKitLoading, setIsKitLoading] = useState(true);
+  const [isKitLoading, setIsKitLoading] = useState(false);
+  const [isAudioReady, setIsAudioReady] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodesRef = useRef<GainNode[]>([]);
@@ -46,7 +47,6 @@ export default function DrumMachinePage() {
     const buffer = context.createBuffer(1, frameCount, context.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < frameCount; i++) {
-        // A simple decaying noise to create a click sound
         data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (context.sampleRate * 0.01));
     }
     return buffer;
@@ -72,12 +72,13 @@ export default function DrumMachinePage() {
             })
             .then(buffer => context.decodeAudioData(buffer))
             .catch(err => {
-              console.warn(`Could not load or decode sound: ${sound.path}. Using fallback click sound. To fix this, add the audio file to the /public${sound.path} directory.`);
+              console.warn(`Could not load or decode sound: ${sound.path}. Using a fallback click sound. To fix this, add the required audio files to the /public${sound.path} directory.`);
               return fallbackBuffer;
             })
         )
       );
       setAudioBuffers(decodedBuffers);
+      setIsAudioReady(true);
     } catch (error) {
       console.error("Failed to initialize audio kit:", error);
       toast({
@@ -92,7 +93,7 @@ export default function DrumMachinePage() {
   
   const playSample = useCallback((soundIndex: number) => {
     const context = audioContextRef.current;
-    if (!context || context.state !== 'running') return;
+    if (!context || !isAudioReady) return;
     
     const buffer = audioBuffers[soundIndex];
     const gainNode = gainNodesRef.current[soundIndex];
@@ -103,10 +104,10 @@ export default function DrumMachinePage() {
       source.connect(gainNode);
       source.start(0);
     }
-  }, [audioBuffers]);
+  }, [audioBuffers, isAudioReady]);
 
   useEffect(() => {
-    if (isPlaying && !isKitLoading) {
+    if (isPlaying && isAudioReady) {
       intervalRef.current = setInterval(() => {
         setCurrentStep(prevStep => {
           const nextStep = (prevStep + 1) % NUM_STEPS;
@@ -122,14 +123,16 @@ export default function DrumMachinePage() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
-      setCurrentStep(-1);
+      if (!isPlaying) {
+        setCurrentStep(-1);
+      }
     }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, tempo, pattern, playSample, isKitLoading]);
+  }, [isPlaying, tempo, pattern, playSample, isAudioReady]);
 
   const handlePlayPause = async () => {
     let context = audioContextRef.current;
@@ -154,11 +157,7 @@ export default function DrumMachinePage() {
       await context.resume();
     }
     
-    if (isPlaying) {
-      setIsPlaying(false);
-    } else {
-      setIsPlaying(true);
-    }
+    setIsPlaying(prev => !prev);
   };
 
   const handleClear = () => {
