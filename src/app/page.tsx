@@ -67,12 +67,12 @@ export default function DrumMachinePage() {
         DRUM_KIT.sounds.map(sound =>
           fetch(sound.path)
             .then(response => {
-              if (!response.ok) throw new Error(`Sound file not found: ${sound.path}`);
+              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
               return response.arrayBuffer();
             })
             .then(buffer => context.decodeAudioData(buffer))
             .catch(err => {
-              console.warn(`Could not load sound: ${sound.path}. Using fallback. This is expected if sound files are not present in /public${sound.path}.`);
+              console.warn(`Could not load or decode sound: ${sound.path}. Using fallback click sound. To fix this, add the audio file to the /public${sound.path} directory.`);
               return fallbackBuffer;
             })
         )
@@ -92,10 +92,12 @@ export default function DrumMachinePage() {
   
   const playSample = useCallback((soundIndex: number) => {
     const context = audioContextRef.current;
+    if (!context || context.state !== 'running') return;
+    
     const buffer = audioBuffers[soundIndex];
     const gainNode = gainNodesRef.current[soundIndex];
 
-    if (context && buffer && gainNode && context.state === 'running') {
+    if (buffer && gainNode) {
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(gainNode);
@@ -136,6 +138,7 @@ export default function DrumMachinePage() {
       try {
         context = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioContextRef.current = context;
+        await loadAudioKit(context);
       } catch (error) {
         console.error("Failed to create audio context:", error);
         toast({
@@ -154,9 +157,6 @@ export default function DrumMachinePage() {
     if (isPlaying) {
       setIsPlaying(false);
     } else {
-      if(audioBuffers.length === 0) {
-        await loadAudioKit(context);
-      }
       setIsPlaying(true);
     }
   };
@@ -205,15 +205,6 @@ export default function DrumMachinePage() {
   const isPatternValid = (p: any): p is boolean[][] => {
     return Array.isArray(p) && p.length === DRUM_KIT.sounds.length && p.every(row => Array.isArray(row) && row.length === NUM_STEPS && row.every(val => typeof val === 'boolean'));
   }
-
-  useEffect(() => {
-    // We only want to create the audio context once the component is mounted in the browser.
-    if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        loadAudioKit(audioContextRef.current);
-    }
-  }, [loadAudioKit]);
-
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8">
