@@ -30,25 +30,20 @@ export default function DrumMachinePage() {
   const [tempo, setTempo] = useState(120);
   const [pattern, setPattern] = useState<boolean[][]>(initialPattern);
   const [volumes, setVolumes] = useState<number[]>(Array(DRUM_KIT.sounds.length).fill(80));
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(-1);
   const [audioBuffers, setAudioBuffers] = useState<(AudioBuffer | null)[]>([]);
   const [isRandomizing, setIsRandomizing] = useState(false);
   const [isKitLoading, setIsKitLoading] = useState(false);
-  const [isAudioContextReady, setIsAudioContextReady] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodesRef = useRef<GainNode[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
-  const createAudioContextAndLoadKit = useCallback(async () => {
-    if (audioContextRef.current) return;
-
+  const loadAudioKit = useCallback(async (context: AudioContext) => {
     try {
       setIsKitLoading(true);
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = context;
-
+      
       gainNodesRef.current = DRUM_KIT.sounds.map(() => context.createGain());
       gainNodesRef.current.forEach((gainNode, index) => {
         gainNode.gain.value = volumes[index] / 100;
@@ -67,13 +62,12 @@ export default function DrumMachinePage() {
         )
       );
       setAudioBuffers(decodedBuffers);
-      setIsAudioContextReady(true);
     } catch (error) {
-      console.error("Failed to initialize audio:", error);
+      console.error("Failed to initialize audio kit:", error);
       toast({
         variant: "destructive",
         title: "Audio Error",
-        description: "Could not initialize the audio engine.",
+        description: "Could not load the sound kit.",
       });
     } finally {
       setIsKitLoading(false);
@@ -85,10 +79,7 @@ export default function DrumMachinePage() {
     const buffer = audioBuffers[soundIndex];
     const gainNode = gainNodesRef.current[soundIndex];
 
-    if (context && buffer && gainNode) {
-      if (context.state === 'suspended') {
-        context.resume();
-      }
+    if (context && buffer && gainNode && context.state === 'running') {
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(gainNode);
@@ -97,7 +88,7 @@ export default function DrumMachinePage() {
   }, [audioBuffers]);
 
   useEffect(() => {
-    if (isPlaying && isAudioContextReady) {
+    if (isPlaying && !isKitLoading) {
       intervalRef.current = setInterval(() => {
         setCurrentStep(prevStep => {
           const nextStep = (prevStep + 1) % NUM_STEPS;
@@ -113,22 +104,40 @@ export default function DrumMachinePage() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      setCurrentStep(-1);
     }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, tempo, pattern, playSample, isAudioContextReady]);
+  }, [isPlaying, tempo, pattern, playSample, isKitLoading]);
 
   const handlePlayPause = async () => {
-    if (!isAudioContextReady) {
-      await createAudioContextAndLoadKit();
+    if (isKitLoading) return;
+
+    let context = audioContextRef.current;
+
+    if (!context) {
+      try {
+        context = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = context;
+        await loadAudioKit(context);
+      } catch (error) {
+        console.error("Failed to create audio context:", error);
+        toast({
+          variant: 'destructive',
+          title: 'Audio Error',
+          description: 'Could not initialize the audio engine. Your browser might not be supported.',
+        });
+        return;
+      }
+    }
+
+    if (context.state === 'suspended') {
+      await context.resume();
     }
     
-    if (audioContextRef.current?.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
     setIsPlaying(!isPlaying);
   };
 
@@ -219,19 +228,22 @@ export default function DrumMachinePage() {
                 {DRUM_KIT.sounds.map((sound, soundIndex) => (
                   <React.Fragment key={sound.name}>
                     <div className="font-bold text-sm text-left sticky left-0 z-10 bg-background/95 pr-2 flex items-center">{sound.name}</div>
-                    {Array.from({ length: NUM_STEPS }).map((_, stepIndex) => (
-                      <div key={stepIndex} className={cn("flex items-center justify-center", stepIndex === currentStep && isPlaying ? "bg-primary/20 rounded-md" : "")}>
-                        <button
-                          onClick={() => toggleStep(soundIndex, stepIndex)}
-                          aria-pressed={pattern?.[soundIndex]?.[stepIndex] ?? false}
-                          className={cn(
-                            "w-full h-12 md:h-14 rounded-md border-2 border-muted transition-all duration-150 transform hover:scale-105",
-                            pattern?.[soundIndex]?.[stepIndex] ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
-                             (stepIndex + 1) % 4 === 0 ? "border-r-foreground/30" : ""
-                          )}
-                        />
-                      </div>
-                    ))}
+                    {Array.from({ length: NUM_STEPS }).map((_, stepIndex) => {
+                       const isActive = pattern?.[soundIndex]?.[stepIndex] ?? false;
+                       return (
+                          <div key={stepIndex} className={cn("flex items-center justify-center", stepIndex === currentStep && isPlaying ? "bg-primary/20 rounded-md" : "")}>
+                            <button
+                              onClick={() => toggleStep(soundIndex, stepIndex)}
+                              aria-pressed={isActive}
+                              className={cn(
+                                "w-full h-12 md:h-14 rounded-md border-2 border-muted transition-all duration-150 transform hover:scale-105",
+                                isActive ? 'bg-accent' : 'bg-muted/50 hover:bg-muted',
+                                 (stepIndex + 1) % 4 === 0 ? "border-r-foreground/30" : ""
+                              )}
+                            />
+                          </div>
+                       );
+                    })}
                   </React.Fragment>
                 ))}
               </div>
