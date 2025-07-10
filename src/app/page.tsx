@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Loader2, Play, Pause, RotateCcw, Trash2, Sparkles } from 'lucide-react';
+import { Loader2, Play, Pause, RotateCcw, Sparkles } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const NUM_STEPS = 16;
@@ -34,45 +34,51 @@ export default function DrumMachinePage() {
   const [audioBuffers, setAudioBuffers] = useState<(AudioBuffer | null)[]>([]);
   const [isRandomizing, setIsRandomizing] = useState(false);
   const [isKitLoading, setIsKitLoading] = useState(true);
+  const [isAudioContextReady, setIsAudioContextReady] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodesRef = useRef<GainNode[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
-  const createAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
+  const createAudioContextAndLoadKit = useCallback(async () => {
+    if (audioContextRef.current) return;
+
+    try {
+      setIsKitLoading(true);
       const context = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = context;
+
       gainNodesRef.current = DRUM_KIT.sounds.map(() => context.createGain());
       gainNodesRef.current.forEach((gainNode, index) => {
         gainNode.gain.value = volumes[index] / 100;
         gainNode.connect(context.destination);
       });
-    }
-  }, [volumes]);
-
-  useEffect(() => {
-    createAudioContext();
-    const context = audioContextRef.current;
-    if (!context) return;
-    
-    setIsKitLoading(true);
-    Promise.all(
-      DRUM_KIT.sounds.map(sound =>
-        fetch(sound.path)
-          .then(response => response.arrayBuffer())
-          .then(buffer => context.decodeAudioData(buffer))
-          .catch(err => {
-            console.warn(`Could not load sound: ${sound.path}. This is expected if sound files are not present in /public${sound.path}.`);
-            return null;
-          })
-      )
-    ).then(decodedBuffers => {
+      
+      const decodedBuffers = await Promise.all(
+        DRUM_KIT.sounds.map(sound =>
+          fetch(sound.path)
+            .then(response => response.arrayBuffer())
+            .then(buffer => context.decodeAudioData(buffer))
+            .catch(err => {
+              console.warn(`Could not load sound: ${sound.path}. This is expected if sound files are not present in /public${sound.path}.`);
+              return null;
+            })
+        )
+      );
       setAudioBuffers(decodedBuffers);
+      setIsAudioContextReady(true);
+    } catch (error) {
+      console.error("Failed to initialize audio:", error);
+      toast({
+        variant: "destructive",
+        title: "Audio Error",
+        description: "Could not initialize the audio engine.",
+      });
+    } finally {
       setIsKitLoading(false);
-    });
-  }, [createAudioContext]);
+    }
+  }, [volumes, toast]);
   
   const playSample = useCallback((soundIndex: number) => {
     const context = audioContextRef.current;
@@ -91,7 +97,7 @@ export default function DrumMachinePage() {
   }, [audioBuffers]);
 
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && isAudioContextReady) {
       intervalRef.current = setInterval(() => {
         setCurrentStep(prevStep => {
           const nextStep = (prevStep + 1) % NUM_STEPS;
@@ -113,12 +119,15 @@ export default function DrumMachinePage() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, tempo, pattern, playSample]);
+  }, [isPlaying, tempo, pattern, playSample, isAudioContextReady]);
 
-  const handlePlayPause = () => {
-    if (!audioContextRef.current) createAudioContext();
-    if(audioContextRef.current?.state === 'suspended') {
-      audioContextRef.current.resume();
+  const handlePlayPause = async () => {
+    if (!isAudioContextReady) {
+      await createAudioContextAndLoadKit();
+    }
+    
+    if (audioContextRef.current?.state === 'suspended') {
+      await audioContextRef.current.resume();
     }
     setIsPlaying(!isPlaying);
   };
@@ -131,11 +140,11 @@ export default function DrumMachinePage() {
     setIsRandomizing(true);
     try {
       const response = await rhythmRandomizer({ pattern });
-      if (response && response.modifiedPattern) {
+      if (response && response.modifiedPattern && isPatternValid(response.modifiedPattern)) {
         setPattern(response.modifiedPattern);
         toast({ title: "Rhythm Randomized!", description: "The AI has cooked up a new beat." });
       } else {
-         throw new Error("AI did not return a modified pattern.");
+         throw new Error("AI did not return a valid modified pattern.");
       }
     } catch (error) {
       console.error('Failed to randomize pattern:', error);
@@ -164,8 +173,8 @@ export default function DrumMachinePage() {
       }
   };
 
-  const isPatternValid = (p: boolean[][]): boolean => {
-    return Array.isArray(p) && p.length === DRUM_KIT.sounds.length && p.every(row => Array.isArray(row) && row.length === NUM_STEPS);
+  const isPatternValid = (p: any): p is boolean[][] => {
+    return Array.isArray(p) && p.length === DRUM_KIT.sounds.length && p.every(row => Array.isArray(row) && row.length === NUM_STEPS && row.every(val => typeof val === 'boolean'));
   }
 
   return (
