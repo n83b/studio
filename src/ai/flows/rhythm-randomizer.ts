@@ -37,10 +37,12 @@ const prompt = ai.definePrompt({
   name: 'rhythmRandomizerPrompt',
   input: {schema: RhythmRandomizerInputSchema},
   output: {schema: RhythmRandomizerOutputSchema},
-  prompt: `You are a rhythm generator.  Given the following rhythm pattern, add subtle variations to make it more interesting, without changing the overall feel too much. Do not add any explanation, only output the new pattern.
+  prompt: `You are a rhythm generator. Given the following rhythm pattern, add subtle variations to make it more interesting, without changing the overall feel too much.
+
+IMPORTANT: You must only output a valid JSON 2D array of booleans that matches the input structure. Do not add any explanation, comments, or any other text.
 
 Pattern:
-{{pattern}}`,
+{{{jsonStringify pattern}}}`,
 });
 
 const rhythmRandomizerFlow = ai.defineFlow(
