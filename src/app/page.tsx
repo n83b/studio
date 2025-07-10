@@ -1,3 +1,4 @@
+
 'use client';
 
 import { rhythmRandomizer } from '@/ai/flows/rhythm-randomizer';
@@ -33,31 +34,46 @@ export default function DrumMachinePage() {
   const [currentStep, setCurrentStep] = useState(-1);
   const [audioBuffers, setAudioBuffers] = useState<(AudioBuffer | null)[]>([]);
   const [isRandomizing, setIsRandomizing] = useState(false);
-  const [isKitLoading, setIsKitLoading] = useState(false);
+  const [isKitLoading, setIsKitLoading] = useState(true);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodesRef = useRef<GainNode[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  
+  const createFallbackBuffer = (context: AudioContext) => {
+    const frameCount = context.sampleRate * 0.1; // 100ms
+    const buffer = context.createBuffer(1, frameCount, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i++) {
+        // A simple decaying noise to create a click sound
+        data[i] = Math.random() * 2 - 1 * Math.exp(-i / (context.sampleRate * 0.01));
+    }
+    return buffer;
+  }
 
   const loadAudioKit = useCallback(async (context: AudioContext) => {
+    setIsKitLoading(true);
     try {
-      setIsKitLoading(true);
-      
       gainNodesRef.current = DRUM_KIT.sounds.map(() => context.createGain());
       gainNodesRef.current.forEach((gainNode, index) => {
         gainNode.gain.value = volumes[index] / 100;
         gainNode.connect(context.destination);
       });
       
+      const fallbackBuffer = createFallbackBuffer(context);
+
       const decodedBuffers = await Promise.all(
         DRUM_KIT.sounds.map(sound =>
           fetch(sound.path)
-            .then(response => response.arrayBuffer())
+            .then(response => {
+              if (!response.ok) throw new Error('Sound file not found');
+              return response.arrayBuffer();
+            })
             .then(buffer => context.decodeAudioData(buffer))
             .catch(err => {
-              console.warn(`Could not load sound: ${sound.path}. This is expected if sound files are not present in /public${sound.path}.`);
-              return null;
+              console.warn(`Could not load sound: ${sound.path}. Using fallback. This is expected if sound files are not present in /public${sound.path}.`);
+              return fallbackBuffer;
             })
         )
       );
@@ -93,7 +109,7 @@ export default function DrumMachinePage() {
         setCurrentStep(prevStep => {
           const nextStep = (prevStep + 1) % NUM_STEPS;
           pattern.forEach((track, soundIndex) => {
-            if (track && track[nextStep]) {
+            if (track?.[nextStep]) {
               playSample(soundIndex);
             }
           });
@@ -138,7 +154,14 @@ export default function DrumMachinePage() {
       await context.resume();
     }
     
-    setIsPlaying(!isPlaying);
+    if (isPlaying) {
+      setIsPlaying(false);
+    } else {
+      if(audioBuffers.length === 0) {
+        await loadAudioKit(context);
+      }
+      setIsPlaying(true);
+    }
   };
 
   const handleClear = () => {
